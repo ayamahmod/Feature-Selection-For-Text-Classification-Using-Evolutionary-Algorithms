@@ -4,7 +4,7 @@ import io
 from time import time
 from sklearn.utils.extmath import density
 import argparse
-from collections import defaultdict
+from collections import defaultdict, Counter
 import numpy as np
 from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
@@ -14,7 +14,9 @@ from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.tree import DecisionTreeClassifier
-# import nltk
+from sklearn.ensemble import RandomForestClassifier
+import nltk
+from nltk import stem
 # from nltk.corpus import stopwords
 # from nltk.classify.scikitlearn import SklearnClassifier
 
@@ -44,7 +46,15 @@ def read_data(d):
 
 
 def build_tfidf(train_data, test_data):
-    counter = CountVectorizer(stop_words='english')
+    class StemTokenizer(object):
+        def __init__(self):
+            self.wnl = stem.WordNetLemmatizer()
+
+        def __call__(self, doc):
+            return [self.wnl.lemmatize(t) for t in nltk.word_tokenize(doc)]
+
+    counter = CountVectorizer(tokenizer=StemTokenizer(),
+                              stop_words='english', min_df=3)
     raw = [data[1] for data in train_data]
     train_tf = counter.fit_transform(raw)
     raw = [data[1] for data in test_data]
@@ -55,12 +65,14 @@ def build_tfidf(train_data, test_data):
     test_tfidf = transformer.transform(test_tf)
     return train_tfidf, test_tfidf
 
+
 def select_features(train_X, train_y, test_X, k):
     selector = SelectKBest(chi2, k=k)
     selector.fit(train_X, train_y)
     train_X = selector.transform(train_X)
     test_X = selector.transform(test_X)
     return train_X, test_X
+
 
 def get_word_vector(text):
     stop = stopwords.words('english')
@@ -118,7 +130,7 @@ def evaluate(labels, true_labels, predicted_labels):
     return fscore, average_score
 
 
-def benchmark(clf, train_X, train_y, test_X, test_y):
+def benchmark(clf, train_X, train_y, test_X, test_y, encoder):
     print('_' * 80)
     print("Training: ")
     print(clf)
@@ -134,9 +146,14 @@ def benchmark(clf, train_X, train_y, test_X, test_y):
 
     score = metrics.f1_score(test_y, pred, average='micro')
     print("f1-score:   %0.3f" % score)
-
-    # scores = metrics.f1_score(test_y, pred, average=None)
-    # print(scores)
+    scores = metrics.f1_score(test_y, pred, average=None)
+    counter = Counter(train_y)
+    counter = [(k, v) for k, v in counter.iteritems()]
+    counter.sort(key=lambda a: a[1], reverse=True)
+    tops = [v[0] for v in counter[0:10]]
+    labels = encoder.inverse_transform(tops)
+    s = [scores[v] for v in tops]
+    print(zip(labels, s))
 
     # print("confusion matrix:")
     # print(metrics.confusion_matrix(test_y, pred))
@@ -161,7 +178,7 @@ if __name__ == '__main__':
     encoder = LabelEncoder()
     train_y = encoder.fit_transform(train_labels)
     test_y = encoder.transform(test_labels)
-    ten_encoded = encoder.transform(ten_most)
+
     print("build tfidf")
     train_tfidf, test_tfidf = build_tfidf(train_data, test_data)
 
@@ -172,24 +189,24 @@ if __name__ == '__main__':
         train_X, test_X = select_features(train_tfidf, train_labels,
                                           test_tfidf, k)
         clf = svm.LinearSVC()
-        benchmark(clf, train_X, train_y, test_X, test_y)
+        benchmark(clf, train_X, train_y, test_X, test_y, encoder)
 
-        for degree in range(1, 6):
-            clf = svm.SVC(kernel='poly', degree=degree)
-            benchmark(clf, train_X, train_y, test_X, test_y)
+        # for degree in range(1, 6):
+        #     clf = svm.SVC(kernel='poly', degree=degree)
+        #     benchmark(clf, train_X, train_y, test_X, test_y)
 
-        for gamma in [0.6, 0.8, 1, 1.2]:
-            clf = svm.SVC(kernel='rbf', gamma=gamma)
-            benchmark(clf, train_X, train_y, test_X, test_y)
+        # for gamma in [0.6, 0.8, 1, 1.2]:
+        #     clf = svm.SVC(kernel='rbf', gamma=gamma)
+        #     benchmark(clf, train_X, train_y, test_X, test_y)
 
-        clf = KNeighborsClassifier()
-        benchmark(clf, train_X, train_y, test_X, test_y)
+        # clf = KNeighborsClassifier()
+        # benchmark(clf, train_X, train_y, test_X, test_y)
 
-        clf = NearestCentroid()
-        benchmark(clf, train_X, train_y, test_X, test_y)
+        # clf = NearestCentroid()
+        # benchmark(clf, train_X, train_y, test_X, test_y)
 
-        clf = MultinomialNB()
-        benchmark(clf, train_X, train_y, test_X, test_y)
+        # clf = MultinomialNB()
+        # benchmark(clf, train_X, train_y, test_X, test_y)
 
-        clf = DecisionTreeClassifier()
-        benchmark(clf, train_X.toarray(), train_y, test_X.toarray(), test_y)
+        # clf = DecisionTreeClassifier()
+        # benchmark(clf, train_X.toarray(), train_y, test_X.toarray(), test_y)
