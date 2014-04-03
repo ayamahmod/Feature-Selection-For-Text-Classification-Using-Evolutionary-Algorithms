@@ -1,14 +1,17 @@
 import os
-import sys
-import io
+from HTMLParser import HTMLParser
+import re
+import fnmatch
+from collections import Counter
 from time import time
 from sklearn.utils.extmath import density
 import argparse
 from collections import defaultdict, Counter
 import numpy as np
+from sklearn.preprocessing import normalize
 from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, LabelBinarizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
@@ -17,9 +20,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 import nltk
 from nltk import stem
-# from nltk.corpus import stopwords
-# from nltk.classify.scikitlearn import SklearnClassifier
-
+from nltk.corpus import stopwords
 
 ten_most = ['earn', 'acq',
             'money-fx', 'grain',
@@ -27,42 +28,272 @@ ten_most = ['earn', 'acq',
             'interest', 'ship',
             'wheat', 'corn']
 
-k_features = [500, 1000, 2000, 5000]
+k_features = [500, 1000, 2000, 5000, -1]
 
 
-def read_data(d):
-    categories = os.listdir(d)
-    data = []
-    for c in categories:
-        full_path = os.path.join(d, c)
-        files = [os.path.join(full_path, f)
-                 for f in os.listdir(full_path)]
+class ReutersParser(HTMLParser):
+    """
+    parse reuters 21578 dataset
+    """
+    REUTERS = "reuters"
+    LEWISSPLIT = "lewissplit"
+    TOPICS = "topics"
+    TITLE = "title"
+    BODY = "body"
+    D = 'd'
+    PLACES = 'places'
+    PEOPLE = 'peopl'
+    ORGS = 'orgs'
+    EXCHANGES = 'exchanges'
+    COMPANIES = 'companies'
+    DATELINE = 'dateline'
+    NEWID = 'newid'
 
-        for filename in files:
-            with io.open(filename, 'r') as f:
-                text = f.read()
-                data.append((c, text))
-    return data
+    def __init__(self):
+        HTMLParser.__init__(self)
+        self._reset()
+
+    def _reset(self):
+        self.in_title = 0
+        self.in_body = 0
+        self.in_d = 0
+        self.in_topics = 0
+        self.in_places = 0
+        self.in_people = 0
+        self.in_orgs = 0
+        self.in_exchanges = 0
+        self.in_companies = 0
+        self.in_dateline = 0
+        self.id = 0
+        self.title = ""
+        self.split = ""
+        self.body = ""
+        self.has_topics = ""
+        self.dateline = ""
+        self.topics = []
+        self.places = []
+        self.people = []
+        self.orgs = []
+        self.exchanges = []
+        self.compnies = []
+
+    def parse(self, text):
+        self.docs = []
+        self.feed(text)
+        return self.docs
+
+    def handle_starttag(self, tag, attrs):
+        if tag == self.REUTERS:
+            for attr in attrs:
+                if attr[0] == self.LEWISSPLIT:
+                    self.split = attr[1]
+                elif attr[0] == self.TOPICS:
+                    self.has_topics = attr[1]
+                elif attr[0] == self.NEWID:
+                    self.id = int(attr[1])
+        elif tag == self.TOPICS:
+            self.in_topics = 1
+        elif tag == self.PLACES:
+            self.in_places = 1
+        elif tag == self.PEOPLE:
+            self.in_people = 1
+        elif tag == self.ORGS:
+            self.in_orgs = 1
+        elif tag == self.EXCHANGES:
+            self.in_exchanges = 1
+        elif tag == self.COMPANIES:
+            self.in_companies = 1
+        elif tag == self.DATELINE:
+            self.in_dateline = 1
+        elif tag == self.TITLE:
+            self.in_title = 1
+        elif tag == self.BODY:
+            self.in_body = 1
+        elif tag == self.D:
+            self.in_d = 1
+
+    def handle_endtag(self, tag):
+        if tag == self.REUTERS:
+            self.body = re.sub(r'\s+', r' ', self.body)
+            self.docs.append({'split': self.split,
+                              'has_topics': self.has_topics,
+                              'id': self.id,
+                              'topics': self.topics,
+                              'places': self.places,
+                              'people': self.people,
+                              'orgs': self.orgs,
+                              'exchanges': self.exchanges,
+                              'companies': self.compnies,
+                              'dateline': self.dateline,
+                              'title': self.title,
+                              'body': self.body})
+            self._reset()
+        elif tag == self.TOPICS:
+            self.in_topics = 0
+        elif tag == self.PLACES:
+            self.in_places = 0
+        elif tag == self.PEOPLE:
+            self.in_people = 0
+        elif tag == self.ORGS:
+            self.in_orgs = 0
+        elif tag == self.EXCHANGES:
+            self.in_exchanges = 0
+        elif tag == self.COMPANIES:
+            self.in_companies = 0
+        elif tag == self.DATELINE:
+            self.in_dateline = 0
+        elif tag == self.TITLE:
+            self.in_title = 0
+        elif tag == self.BODY:
+            self.in_body = 0
+        elif tag == self.D:
+            self.in_d = 0
+
+    def handle_data(self, data):
+        if self.in_title:
+            self.title = data
+        elif self.in_body:
+            self.body = data
+        elif self.in_dateline:
+            self.dateline = data
+        elif self.in_d:
+            if self.in_topics:
+                self.topics.append(data)
+            elif self.in_places:
+                self.places.append(data)
+            elif self.in_people:
+                self.people.append(data)
+            elif self.in_orgs:
+                self.orgs.append(data)
+            elif self.in_exchanges:
+                self.exchanges.append(data)
+            elif self.in_companies:
+                self.companies.append(data)
+
+
+class ReutersReader():
+    def __init__(self, data_path):
+        self.data_path = data_path
+
+    def read(self):
+        """Iterate doc by doc, yield a dict."""
+        data = []
+        for root, _dirnames, filenames in os.walk(self.data_path):
+            for filename in fnmatch.filter(filenames, '*.sgm'):
+                path = os.path.join(root, filename)
+                parser = ReutersParser()
+                with open(path, 'r') as f:
+                    text = f.read()
+                    d = parser.parse(text)
+                    data += d
+        return data
+
+
+def filter_data(docs):
+    traindocs = [doc for doc in docs
+                 if doc['split'] == 'TRAIN' and doc['has_topics'] == 'YES'
+                 and len(doc['topics']) == 1]
+    testdocs = [doc for doc in docs
+                if doc['split'] == 'TEST' and doc['has_topics'] == 'YES'
+                and len(doc['topics']) == 1]
+
+    traintopics = set()
+    testtopics = set()
+    for doc in traindocs:
+        traintopics.update(doc['topics'])
+    for doc in testdocs:
+        testtopics.update(doc['topics'])
+    topics = set.intersection(traintopics, testtopics)
+
+    def extract_text(doc):
+        items = doc['places'] + doc['people']
+        items += doc['orgs'] + doc['exchanges'] + doc['companies']
+        items.append(doc['title'])
+        items.append(doc['dateline'])
+        items.append(doc['body'])
+        text = " ".join(items)
+        return text
+
+    def extract_data(docs):
+        texts = []
+        labels = []
+        for doc in docs:
+            n_topic = len(doc['topics'])
+            if n_topic == 0:
+                continue
+
+            for i in range(n_topic):
+                topic = doc['topics'][i]
+                if topic in topics:
+                    text = extract_text(doc)
+                    texts.append(text)
+                    labels.append(topic)
+        return texts, labels
+
+    train_text, train_label = extract_data(traindocs)
+    test_text, test_label = extract_data(testdocs)
+
+    print('all topics: {0}'.format(len(topics)))
+    print('train docs:{0}, test docs {1}'.format(len(traindocs), len(testdocs)))
+    print(len(train_text), len(test_text))
+    return train_text, train_label, test_text, test_label
+
+
+class StemTokenizer(object):
+    def __init__(self):
+        self.wnl = stem.WordNetLemmatizer()
+        self.word = re.compile('[a-zA-Z]+')
+
+    def __call__(self, doc):
+        tokens = re.split('\W+', doc.lower())
+        # tokens = [token for sentence in nltk.sent_tokenize(doc)
+        #           for token in nltk.word_tokenize(sentence)]
+        tokens = [self.wnl.lemmatize(t) for t in tokens]
+        tokens = [t for t in tokens if self.word.search(t)]
+        # sentences = nltk.sent_tokenize(doc)
+        # tokens = [self.wnl.lemmatize(word) for sentence in sentences
+        #           for word in nltk.word_tokenize(sentence)]
+        return tokens
+
+
+class TfidfBuilder(object):
+    def __init__(self, min_f=3):
+        self.tokenizer = StemTokenizer()
+        self.min_f = min_f
+        self.stops = stopwords.words('english')
+
+    def bagOfWords(self, data):
+        bags = []
+        for doc in data:
+            tokens = self.tokenizer(doc)
+            counts = Counter(tokens)
+            size = float(sum([v for k, v in counts.items()]))
+            bag = {k: v/size for k, v in counts.items()}
+            bags.append(bag)
+        return bags
 
 
 def build_tfidf(train_data, test_data):
-    class StemTokenizer(object):
-        def __init__(self):
-            self.wnl = stem.WordNetLemmatizer()
-
-        def __call__(self, doc):
-            return [self.wnl.lemmatize(t) for t in nltk.word_tokenize(doc)]
-
+    stops = stopwords.words('english')
+    stops.append('reuter')
     counter = CountVectorizer(tokenizer=StemTokenizer(),
-                              stop_words='english', min_df=3)
-    raw = [data[1] for data in train_data]
-    train_tf = counter.fit_transform(raw)
-    raw = [data[1] for data in test_data]
-    test_tf = counter.transform(raw)
+                              stop_words=stops, min_df=3,
+                              dtype=np.double)
+    counter.fit(train_data)
+    train_tf = counter.transform(train_data)
+    test_tf = counter.transform(test_data)
 
-    transformer = TfidfTransformer()
+    # tokens = counter.inverse_transform(train_tf)
+    # for token in tokens[0:100]:
+    #     print(token)
+
+    # train_tf = normalize(train_tf, norm='l1', axis=1)
+    # test_tf = normalize(test_tf, norm='l1', axis=1)
+    # print(train_tf)
+    transformer = TfidfTransformer(norm='l2', sublinear_tf=True)
     train_tfidf = transformer.fit_transform(train_tf)
     test_tfidf = transformer.transform(test_tf)
+    # print(train_tfidf)
     return train_tfidf, test_tfidf
 
 
@@ -74,19 +305,15 @@ def select_features(train_X, train_y, test_X, k):
     return train_X, test_X
 
 
-def get_word_vector(text):
-    stop = stopwords.words('english')
-    tokens = nltk.word_tokenize(text)
-    tokens = [t.lower() for t in tokens if t.lower() not in stop]
-    vector = nltk.FreqDist(tokens)
-    vector = {k: v for k, v in vector.iteritems() if v >= 3}
-    return vector
-
-
-def train(X, y):
-    clf = svm.SVC()
-    clf.fit(X, y)
-    return clf
+def build_word_vector(data):
+    def get_word_vector(text):
+        stop = stopwords.words('english')
+        tokens = nltk.word_tokenize(text)
+        tokens = [t.lower() for t in tokens if t.lower() not in stop]
+        vector = nltk.FreqDist(tokens)
+        vector = [(k, v) for k, v in vector.iteritems() if v >= 3]
+        return vector
+    return [get_word_vector(d[1]) for d in data]
 
 
 def evaluate(labels, true_labels, predicted_labels):
@@ -164,32 +391,62 @@ def benchmark(clf, train_X, train_y, test_X, test_y, encoder):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('train', help="the train data directory")
-    parser.add_argument('test', help="the test data directory")
+    parser.add_argument('path', help="the data directory")
 
     args = parser.parse_args()
 
     print('read data')
-    train_data = read_data(args.train)
-    test_data = read_data(args.test)
+    reader = ReutersReader(args.path)
+    data = reader.read()
 
-    train_labels = [data[0] for data in train_data]
-    test_labels = [data[0] for data in test_data]
+    print('filter data')
+    train_text, train_label, test_text, test_label = filter_data(data)
+
+    print('encode labels')
     encoder = LabelEncoder()
-    train_y = encoder.fit_transform(train_labels)
-    test_y = encoder.transform(test_labels)
+    train_y = encoder.fit_transform(train_label)
+    test_y = encoder.transform(test_label)
 
     print("build tfidf")
-    train_tfidf, test_tfidf = build_tfidf(train_data, test_data)
+    # tfidf = TfidfBuilder()
+    # train_X = tfidf.bagOfWords(train_text)
+    # print(train_X)
+    train_X, test_X = build_tfidf(train_text, test_text)
+
+    # def transform(X):
+    #     X = X.toarray()
+    #     n = X.shape[0]
+    #     data = []
+    #     for i in range(n):
+    #         sample = X[i, :]
+    #         vector = [(i, v) for i, v in enumerate(sample) if v != 0]
+    #         data.append(vector)
+    #     return data
+    # train_X = transform(train_X)
+    # test_X = transform(test_X)
 
     print("training")
-    for k in k_features:
-        print("#"*80)
-        print("select {0} features".format(k))
-        train_X, test_X = select_features(train_tfidf, train_labels,
-                                          test_tfidf, k)
-        clf = svm.LinearSVC()
-        benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+    clf = svm.LinearSVC()
+    benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+
+    # model = svmlight.learn(zip(train_y, train_X))
+    # p = svmlight.classify(model, zip(test_y, test_X))
+    # print(metrics.f1_score(test_y, p))
+    # clf = svm.SVC(kernel='poly')
+    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+    # clf = svm.SVC(gamma=7)
+    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+    # for k in k_features:
+    #     print("#"*80)
+    #     if k > 0:
+    #         print("select {0} features".format(k))
+    #         train_X_sub, test_X_sub = select_features(train_X, train_y,
+    #                                                   test_X, k)
+    #     else:
+    #         print("use all features")
+    #         train_X_sub, test_X_sub = train_X, test_X
+    #     clf = svm.LinearSVC()
+    #     benchmark(clf, train_X_sub, train_y, test_X_sub, test_y, encoder)
 
         # for degree in range(1, 6):
         #     clf = svm.SVC(kernel='poly', degree=degree)
@@ -197,7 +454,7 @@ if __name__ == '__main__':
 
         # for gamma in [0.6, 0.8, 1, 1.2]:
         #     clf = svm.SVC(kernel='rbf', gamma=gamma)
-        #     benchmark(clf, train_X, train_y, test_X, test_y)
+        #     benchmark(clf, train_X, train_y, test_X, test_y, encoder)
 
         # clf = KNeighborsClassifier()
         # benchmark(clf, train_X, train_y, test_X, test_y)
