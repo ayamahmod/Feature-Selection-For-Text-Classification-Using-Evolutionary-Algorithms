@@ -5,6 +5,7 @@ from sklearn.utils.extmath import density
 import argparse
 from collections import defaultdict, Counter
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.preprocessing import normalize
 from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
@@ -26,7 +27,7 @@ ten_most = ['earn', 'acq',
             'interest', 'ship',
             'wheat', 'corn']
 
-k_features = [500, 1000, 2000, 5000, -1]
+k_features = [500, 1000, 2000, 5000, 'all']
 
 
 class StemTokenizer(object):
@@ -225,56 +226,60 @@ if __name__ == '__main__':
     # test_X = transform(test_X)
 
     print("training")
-    clf = svm.LinearSVC()
-    benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+    benchmarks = defaultdict(list)
+    betas = [0, 0.1, 0.25, 0.5, 1]
+    ks = [1, 15, 30, 45, 60]
+    degrees = [1, 2, 3, 4, 5]
+    gammas = [0.6, 0.8, 1, 1.2]
+    for k in k_features:
+        print("#"*80)
+        print("select {0} features".format(k))
+        train_X_sub, test_X_sub = select_features(train_X, train_y,
+                                                  test_X, k)
 
-    # clf = KNeighborsClassifier()
-    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+        # clf = svm.LinearSVC()
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
 
-    # clf = NearestCentroid()
-    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
-
-    # clf = MultinomialNB()
-    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
-
-    # clf = DecisionTreeClassifier()
-    # benchmark(clf, train_X.toarray(), train_y, test_X.toarray(), test_y, encoder)
-
-    # model = svmlight.learn(zip(train_y, train_X))
-    # p = svmlight.classify(model, zip(test_y, test_X))
-    # print(metrics.f1_score(test_y, p))
-    # clf = svm.SVC(kernel='poly')
-    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
-    # clf = svm.SVC(gamma=7)
-    # benchmark(clf, train_X, train_y, test_X, test_y, encoder)
-    # for k in k_features:
-    #     print("#"*80)
-    #     if k > 0:
-    #         print("select {0} features".format(k))
-    #         train_X_sub, test_X_sub = select_features(train_X, train_y,
-    #                                                   test_X, k)
-    #     else:
-    #         print("use all features")
-    #         train_X_sub, test_X_sub = train_X, test_X
-    #     clf = svm.LinearSVC()
-    #     benchmark(clf, train_X_sub, train_y, test_X_sub, test_y, encoder)
-
-        # for degree in range(1, 6):
-        #     clf = svm.SVC(kernel='poly', degree=degree)
-        #     benchmark(clf, train_X, train_y, test_X, test_y)
-
-        # for gamma in [0.6, 0.8, 1, 1.2]:
-        #     clf = svm.SVC(kernel='rbf', gamma=gamma)
-        #     benchmark(clf, train_X, train_y, test_X, test_y, encoder)
+        best = 0
+        result = None
+        best_d = None
+        best_g = None
+        for d in degrees:
+            for g in gammas:
+                clf = svm.SVC(kernel='poly', degree=d, gamma=g)
+                r = benchmark(clf, train_X_sub, train_y,
+                              test_X_sub, test_y, encoder)
+                if r[0] > best:
+                    result = r
+                    best_d = d
+                    best_g = g
+        print(best_d, best_g)
+        # clf = svm.SVC(kernel='rbf', gamma=1)
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
 
         # clf = KNeighborsClassifier()
-        # benchmark(clf, train_X, train_y, test_X, test_y)
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
 
         # clf = NearestCentroid()
-        # benchmark(clf, train_X, train_y, test_X, test_y)
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
 
         # clf = MultinomialNB()
-        # benchmark(clf, train_X, train_y, test_X, test_y)
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
 
         # clf = DecisionTreeClassifier()
-        # benchmark(clf, train_X.toarray(), train_y, test_X.toarray(), test_y)
+        # result = benchmark(clf, train_X_sub.toarray(), train_y,
+        #                    test_X_sub.toarray(), test_y, encoder)
+        benchmarks[result[0]].append(result[1])
+
+    x = range(len(k_features))
+    for k, v in benchmarks.iteritems():
+        print(v)
+        print(x)
+        plt.plot(x, v, )
+    print('display benchmarks')
+    plt.show()
