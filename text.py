@@ -13,21 +13,13 @@ from sklearn.preprocessing import LabelEncoder, LabelBinarizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
-from sklearn.naive_bayes import MultinomialNB
+from sklearn.naive_bayes import MultinomialNB, GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 import nltk
 from nltk import stem
 from nltk.corpus import stopwords
 from reader import ReutersReader, NewsgroupsReader
-
-ten_most = ['earn', 'acq',
-            'money-fx', 'grain',
-            'crude', 'trade',
-            'interest', 'ship',
-            'wheat', 'corn']
-
-k_features = [500, 1000, 2000, 5000, 'all']
 
 
 class StemTokenizer(object):
@@ -45,23 +37,6 @@ class StemTokenizer(object):
         # tokens = [self.wnl.lemmatize(word) for sentence in sentences
         #           for word in nltk.word_tokenize(sentence)]
         return tokens
-
-
-class TfidfBuilder(object):
-    def __init__(self, min_f=3):
-        self.tokenizer = StemTokenizer()
-        self.min_f = min_f
-        self.stops = stopwords.words('english')
-
-    def bagOfWords(self, data):
-        bags = []
-        for doc in data:
-            tokens = self.tokenizer(doc)
-            counts = Counter(tokens)
-            size = float(sum([v for k, v in counts.items()]))
-            bag = {k: v/size for k, v in counts.items()}
-            bags.append(bag)
-        return bags
 
 
 def build_tfidf(train_data, test_data):
@@ -89,6 +64,9 @@ def build_tfidf(train_data, test_data):
 
 
 def select_features(train_X, train_y, test_X, k):
+    if k == 'all':
+        return train_X, test_X
+
     selector = SelectKBest(chi2, k=k)
     selector.fit(train_X, train_y)
     train_X = selector.transform(train_X)
@@ -96,76 +74,17 @@ def select_features(train_X, train_y, test_X, k):
     return train_X, test_X
 
 
-def build_word_vector(data):
-    def get_word_vector(text):
-        stop = stopwords.words('english')
-        tokens = nltk.word_tokenize(text)
-        tokens = [t.lower() for t in tokens if t.lower() not in stop]
-        vector = nltk.FreqDist(tokens)
-        vector = [(k, v) for k, v in vector.iteritems() if v >= 3]
-        return vector
-    return [get_word_vector(d[1]) for d in data]
-
-
-def evaluate(labels, true_labels, predicted_labels):
-    true_labels = np.array(true_labels)
-    predicted_labels = np.array(predicted_labels)
-    fscore = []
-
-    TP = 0.0
-    TPFP = 0.0
-    TPFN = 0.0
-    for label in labels:
-        tp = predicted_labels[true_labels == label]
-        tp = np.sum(tp == label)
-
-        tpfp = np.sum(predicted_labels == label)
-        if tpfp == 0:
-            precision = 1
-        else:
-            precision = float(tp) / tpfp
-
-        tpfn = np.sum(true_labels == label)
-        if tpfn == 0:
-            recall = 1
-        else:
-            recall = float(tp) / tpfn
-        fscore.append(2*(precision*recall)/(precision+recall))
-
-        TP += tp
-        TPFP += tpfp
-        TPFN += tpfn
-    if TPFP == 0:
-        p = 1
-    else:
-        p = TP/TPFP
-    if TPFN == 0:
-        r = 1
-    else:
-        r = TP/TPFN
-    # microaverage = 2*(p*r)/(p+r)
-    average_score = metrics.f1_score(true_labels, predicted_labels)
-    return fscore, average_score
-
-
 def benchmark(clf, train_X, train_y, test_X, test_y, encoder):
-    print('_' * 80)
-    print("Training: ")
-    print(clf)
     t0 = time()
     clf.fit(train_X, train_y)
     train_time = time() - t0
-    print("train time: %0.3fs" % train_time)
 
     t0 = time()
     pred = clf.predict(test_X)
     test_time = time() - t0
-    print("test time:  %0.3fs" % test_time)
 
     score = metrics.f1_score(test_y, pred, average='micro')
-    print("f1-score:   %0.3f" % score)
     scores = metrics.f1_score(test_y, pred, average=None)
-
     counter = Counter(train_y)
     counter = [(k, v) for k, v in counter.iteritems()]
     counter.sort(key=lambda a: a[1], reverse=True)
@@ -175,14 +94,19 @@ def benchmark(clf, train_X, train_y, test_X, test_y, encoder):
         tops = [v[0] for v in counter]
     labels = encoder.inverse_transform(tops)
     s = [scores[v] for v in tops]
-    for label, s in zip(labels, s):
-        print("{0}:\t\t{1}".format(label, s))
+    labeled_scores = zip(labels, s)
 
-    # print("confusion matrix:")
-    # print(metrics.confusion_matrix(test_y, pred))
+    return clf, score, labeled_scores, train_time, test_time
 
-    clf_descr = str(clf).split('(')[0]
-    return clf_descr, score, train_time, test_time
+
+def print_benchmark(clf, kfeatures, score, scores, train_time, test_time):
+    print(clf)
+    print('features:\t{0}'.format(kfeatures))
+    print("train time: {0:0.4f}s".format(train_time))
+    print("test time:  {0:0.4f}s".format(test_time))
+    print("f1-score:   {0:0.4f}".format(score))
+    for label, s in scores:
+        print("{0:10s}:\t\t{1:2.2f}".format(label, s*100))
 
 
 if __name__ == '__main__':
@@ -227,59 +151,83 @@ if __name__ == '__main__':
 
     print("training")
     benchmarks = defaultdict(list)
-    betas = [0, 0.1, 0.25, 0.5, 1]
     ks = [1, 15, 30, 45, 60]
     degrees = [1, 2, 3, 4, 5]
     gammas = [0.6, 0.8, 1, 1.2]
+    k_features = [500, 1000, 2000, 5000, 'all']
+
+    clfs = {}
+    bestscores = {}
+    bestk = {}
+
+    def updatescore(name, clf, k, result):
+        if name not in clfs:
+            clfs[name] = clf
+            bestscores[name] = result
+            bestk[name] = k
+        elif result[1] > bestscores[name][1]:
+            clfs[name] = clf
+            bestscores[name] = result
+            bestk[name] = k
+
     for k in k_features:
-        print("#"*80)
         print("select {0} features".format(k))
         train_X_sub, test_X_sub = select_features(train_X, train_y,
                                                   test_X, k)
+        print('linear SVM')
+        clf = svm.LinearSVC()
+        result = benchmark(clf, train_X_sub, train_y,
+                           test_X_sub, test_y, encoder)
+        print(result[1])
+        updatescore('svm linear', clf, k, result)
 
-        # clf = svm.LinearSVC()
-        # result = benchmark(clf, train_X_sub, train_y,
-        #                    test_X_sub, test_y, encoder)
+        # for g in gammas:
+        print('svm rbf')
+        clf = svm.SVC(kernel='rbf', gamma=1)
+        result = benchmark(clf, train_X_sub, train_y,
+                           test_X_sub, test_y, encoder)
+        print(result[1])
+        updatescore('svm rbf', clf, k, result)
 
-        best = 0
-        result = None
-        best_d = None
-        best_g = None
-        for d in degrees:
-            for g in gammas:
-                clf = svm.SVC(kernel='poly', degree=d, gamma=g)
-                r = benchmark(clf, train_X_sub, train_y,
-                              test_X_sub, test_y, encoder)
-                if r[0] > best:
-                    result = r
-                    best_d = d
-                    best_g = g
-        print(best_d, best_g)
-        # clf = svm.SVC(kernel='rbf', gamma=1)
-        # result = benchmark(clf, train_X_sub, train_y,
-        #                    test_X_sub, test_y, encoder)
+        print('K-NN')
+        for i in ks:
+            clf = KNeighborsClassifier(n_neighbors=i)
+            result = benchmark(clf, train_X_sub, train_y,
+                               test_X_sub, test_y, encoder)
+            print(result[1])
+            updatescore('knn', clf, k, result)
 
-        # clf = KNeighborsClassifier()
-        # result = benchmark(clf, train_X_sub, train_y,
-        #                    test_X_sub, test_y, encoder)
+        print('Rocchio')
+        clf = NearestCentroid()
+        result = benchmark(clf, train_X_sub, train_y,
+                           test_X_sub, test_y, encoder)
+        print(result[1])
+        updatescore('Rocchio', clf, k, result)
 
-        # clf = NearestCentroid()
-        # result = benchmark(clf, train_X_sub, train_y,
-        #                    test_X_sub, test_y, encoder)
+        print('Bayes')
+        clf = MultinomialNB()
+        result = benchmark(clf, train_X_sub, train_y,
+                           test_X_sub, test_y, encoder)
+        print(result[1])
+        updatescore('bayes', clf, k, result)
 
-        # clf = MultinomialNB()
-        # result = benchmark(clf, train_X_sub, train_y,
-        #                    test_X_sub, test_y, encoder)
+        print('CART')
+        if k != 'all':
+            clf = DecisionTreeClassifier()
+            result = benchmark(clf, train_X_sub.toarray(), train_y,
+                               test_X_sub.toarray(), test_y, encoder)
+            print(result[1])
+            updatescore('CART', clf, k, result)
 
-        # clf = DecisionTreeClassifier()
-        # result = benchmark(clf, train_X_sub.toarray(), train_y,
-        #                    test_X_sub.toarray(), test_y, encoder)
-        benchmarks[result[0]].append(result[1])
-
-    x = range(len(k_features))
-    for k, v in benchmarks.iteritems():
-        print(v)
-        print(x)
-        plt.plot(x, v, )
-    print('display benchmarks')
-    plt.show()
+    for key in clfs:
+        print('-'*80)
+        print(key)
+        result = bestscores[key]
+        k = bestk[key]
+        print_benchmark(result[0], k, result[1],
+                        result[2], result[3], result[4])
+    # x = range(len(k_features))
+    # for k, v in benchmarks.iteritems():
+    #     print(v)
+    #     print(x)
+    #     plt.plot(x, v, )

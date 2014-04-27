@@ -146,16 +146,18 @@ class ReutersParser(HTMLParser):
 
 
 class NewsgroupsParser():
-    NEWSGROUPS = 'newsgroups'
-    PATH = 'Path'
-    FROM = 'From'
-    SUBJECT = 'Subject'
-    ID = 'Message-ID'
-    SENDER = 'Sender'
-    ORG = 'Organization'
-    REF = 'References'
-    DIST = 'Distribution'
-    DATE = 'Date'
+    META = {
+        'newsgroups': 'newsgroup',
+        'Path': 'path',
+        'From': 'from',
+        'Subject': 'sub',
+        'Message-ID': 'id',
+        'Sender': 'sender',
+        'Organization': 'org',
+        'References': 'ref',
+        'Distribution': 'dist',
+        'Date': 'date',
+    }
     LINES = 'Lines'
 
     def __init__(self):
@@ -164,7 +166,6 @@ class NewsgroupsParser():
     def parse(self, text):
         doc = {}
         lines = text.split('\n')
-        attr = ""
         index = 0
         for i in range(len(lines)):
             line = lines[i]
@@ -176,12 +177,8 @@ class NewsgroupsParser():
                 if a == self.LINES:
                     index = i+1
                     break
-                elif a == self.SUBJECT:
-                    doc['subject'] = token[1]
-                elif a == self.ORG:
-                    doc['org'] = token[1]
-                elif a == self.DIST:
-                    doc['dist'] = token[1]
+                elif a in self.META:
+                    doc[self.META[a]] = token[1]
 
         body = " ".join(lines[index:])
         doc['body'] = body
@@ -278,13 +275,15 @@ class NewsgroupsReader():
                                                               len(traindocs),
                                                               len(testdocs)))
             for doc in traindocs:
-                texts = [v for k, v in doc.iteritems() if k != 'newsgroup']
-                text = " ".join(texts)
+                # texts = [v for k, v in doc.iteritems() if k != 'newsgroup']
+                # text = " ".join(texts)
+                text = doc['body']
                 train_text.append(text)
                 train_label.append(doc['newsgroup'])
             for doc in testdocs:
-                texts = [v for k, v in doc.iteritems() if k != 'newsgroup']
-                text = " ".join(texts)
+                # texts = [v for k, v in doc.iteritems() if k != 'newsgroup']
+                # text = " ".join(texts)
+                text = doc['body']
                 test_text.append(text)
                 test_label.append(doc['newsgroup'])
         return train_text, train_label, test_text, test_label
