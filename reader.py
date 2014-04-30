@@ -243,9 +243,8 @@ class ReutersReader():
         test_text, test_label = extract_data(testdocs)
 
         print('all topics: {0}'.format(len(topics)))
-        print('train docs:{0}, test docs {1}'.format(len(traindocs),
-                                                     len(testdocs)))
-        print(len(train_text), len(test_text))
+        print('train texts:{0}, test texts: {1}'.format(len(train_text),
+                                                        len(test_text)))
         return train_text, train_label, test_text, test_label
 
 
