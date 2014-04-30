@@ -1,26 +1,23 @@
 import re
-from collections import Counter
 from time import time
-from sklearn.utils.extmath import density
 import argparse
-from collections import defaultdict, Counter
+from collections import Counter
+
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import normalize
 from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.preprocessing import LabelEncoder, LabelBinarizer
+from sklearn.preprocessing import LabelEncoder
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier, NearestCentroid
-from sklearn.naive_bayes import MultinomialNB, GaussianNB
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-import nltk
 from nltk import stem
 from nltk.corpus import stopwords
-from reader import ReutersReader, NewsgroupsReader
 
+from reader import ReutersReader, NewsgroupsReader
+from dataset import datasets, fetch
 
 class StemTokenizer(object):
     def __init__(self):
@@ -87,29 +84,37 @@ def benchmark(clf, train_X, train_y, test_X, test_y, encoder):
     return clf, score, labeled_scores, train_time, test_time
 
 
-def print_benchmark(clf, kfeatures, score, scores, train_time, test_time):
+def print_benchmark(kfeatures, clf, score, scores, train_time, test_time):
     print(clf)
     print('features:\t{0}'.format(kfeatures))
     print("train time: {0:0.4f}s".format(train_time))
     print("test time:  {0:0.4f}s".format(test_time))
     print("f1-score:   {0:0.4f}".format(score))
+    n = 0
+    for label, _ in scores:
+        if len(label) > n:
+            n = len(label)
     for label, s in scores:
-        print("{0:10s}:\t\t{1:2.2f}".format(label, s*100))
+        tmpl = "{0:" + str(n) + "s}:\t{1:2.2f}"
+        print(tmpl.format(label, s*100))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('path', help="the data directory")
-    parser.add_argument('type', choices=['reuters', 'newsgroups'],
+    # parser.add_argument('path', help="the data directory")
+    parser.add_argument('type', choices=datasets.keys(),
                         help="choose the data type")
     args = parser.parse_args()
+
+    print('fetch data')
+    path = fetch(args.type)
 
     print('read data')
     if args.type == 'reuters':
         reader = ReutersReader()
-    elif args.type == 'newsgroups':
+    else:
         reader = NewsgroupsReader()
-    data = reader.read(args.path)
+    data = reader.read(path)
 
     print('filter data')
     train_text, train_label, test_text, test_label = reader.filter(data)
@@ -195,10 +200,5 @@ if __name__ == '__main__':
         print(key)
         result = bestscores[key]
         k = bestk[key]
-        print_benchmark(result[0], k, result[1],
+        print_benchmark(k, result[0], result[1],
                         result[2], result[3], result[4])
-    # x = range(len(k_features))
-    # for k, v in benchmarks.iteritems():
-    #     print(v)
-    #     print(x)
-    #     plt.plot(x, v, )
