@@ -29,13 +29,8 @@ class StemTokenizer(object):
 
     def __call__(self, doc):
         tokens = re.split('\W+', doc.lower())
-        # tokens = [token for sentence in nltk.sent_tokenize(doc)
-        #           for token in nltk.word_tokenize(sentence)]
         tokens = [self.wnl.lemmatize(t) for t in tokens]
         tokens = [t for t in tokens if self.word.search(t)]
-        # sentences = nltk.sent_tokenize(doc)
-        # tokens = [self.wnl.lemmatize(word) for sentence in sentences
-        #           for word in nltk.word_tokenize(sentence)]
         return tokens
 
 
@@ -49,13 +44,6 @@ def build_tfidf(train_data, test_data):
     train_tf = counter.transform(train_data)
     test_tf = counter.transform(test_data)
 
-    # tokens = counter.inverse_transform(train_tf)
-    # for token in tokens[0:100]:
-    #     print(token)
-
-    # train_tf = normalize(train_tf, norm='l1', axis=1)
-    # test_tf = normalize(test_tf, norm='l1', axis=1)
-    # print(train_tf)
     transformer = TfidfTransformer(norm='l2', sublinear_tf=True)
     train_tfidf = transformer.fit_transform(train_tf)
     test_tfidf = transformer.transform(test_tf)
@@ -132,28 +120,11 @@ if __name__ == '__main__':
     test_y = encoder.transform(test_label)
 
     print("build tfidf")
-    # tfidf = TfidfBuilder()
-    # train_X = tfidf.bagOfWords(train_text)
-    # print(train_X)
     train_X, test_X = build_tfidf(train_text, test_text)
 
-    # def transform(X):
-    #     X = X.toarray()
-    #     n = X.shape[0]
-    #     data = []
-    #     for i in range(n):
-    #         sample = X[i, :]
-    #         vector = [(i, v) for i, v in enumerate(sample) if v != 0]
-    #         data.append(vector)
-    #     return data
-    # train_X = transform(train_X)
-    # test_X = transform(test_X)
-
     print("training")
-    benchmarks = defaultdict(list)
     ks = [1, 15, 30, 45, 60]
-    degrees = [1, 2, 3, 4, 5]
-    gammas = [0.6, 0.8, 1, 1.2]
+    gammas = [0.2, 0.6, 1, 1.4]
     k_features = [500, 1000, 2000, 5000, 'all']
 
     clfs = {}
