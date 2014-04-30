@@ -1,0 +1,201 @@
+#+TITLE: Project MDI343: Text Categorization
+
+* Introduction
+  In this project, we will use SVM to do text categorization and compare its performance with other conventional learning methods commonly used
+  for text categorization. The project is based on Thorsten Joachims's paper(Text Categorization with Support Vector Machines: Learning with Many Relevant Features):
+  http://www.cs.cornell.edu/people/tj/publications/joachims_98a.pdf
+
+* Why SVM
+  According to Joachims, there are several important reasons that SVM works well for text categorization
+  + High dimensional input space: :: As every different word is a feature, we will handle great number of features. But SVM has a
+       remarkable property is that it is independant of dimensionality of the feature space. So SVM works well with high dimension.
+  + Few irrelevant features: :: Features with low information gain still contain some useful information and can be used to train.
+  + Document vectors are sparse: :: Every document sample only contains a small part of the whole features, which mean most entries of the vector are zero.
+  + Most text categorization problems are linearly separable: :: We will find in the project experiment that *Linear* SVM can already give a very good result which shows that at least those problems we choose can be separated linearly.
+* Tools
+  + Python(http://www.python.org)
+  + Numpy(http://www.numpy.org)
+  + Scikit-learn(http://scikit-learn.org)
+  + NLTK(http://www.nltk.org)
+
+* Dataset
+  We use the dataset from the site(http://archive.ics.uci.edu/ml). Here, we chose the following two datasets:
+  + Reuters-21578
+
+  http://archive.ics.uci.edu/ml/datasets/Reuters-21578+Text+Categorization+Collection
+
+  + 20 newsgroups
+
+  http://archive.ics.uci.edu/ml/datasets/Twenty+Newsgroups
+
+* Steps
+** Data exrtaction
+   Since those datasets have different data format, we need to use different data parser to read them and transform to the same format used in our system.
+
+   + reuters21578
+
+     In this dataset, all data files are named as /reut2-*.sgm/ where * is from 000 to 021. The /sgm/ file format is like xml.
+     Every sample entry is in a tag named "reuters".
+     For every sample entry, the tags and attributes we used include
+     LEWISSPLIT which is used to seperate TEST and TRAIN samples, TOPICS, PLACES, PEOPLE, ORGS, EXCHANGES, COMPANIES, TITLE and BODY.
+     You can find a sample document in the figure([[sample1]]).
+     As there are some documents that are assigned to multiple classes and some documents with no class, we need to do filter the dataset. In this project, we only choose those documents that have unique class and every class should have at least one sample in Train set and one sample in Test set.
+     Finaly, we got 52 different classes, a Train set with 6532 samples and a Test set with 2568 samples.
+
+     #+caption: reuters21578 sample
+     #+name: sample1
+     [[./sample1.eps]]
+
+   + 20 newsgroups
+
+     This dataset is much simpler than reuters21578. Every directory is a category and every file under the directory is a sample entry.
+     At the beginning of every file, there are some lines of meta data of that file which will not be considered for training. So only the body part after the *lines* meta info will be extracted(figure [[sample2]])
+     Since this dataset does not divide the train and test part for us, we need to do that by ourself. In this project, since every newsgroup has 1000 samples, we put 750 into Train set, and 250 to Test set.
+
+     #+caption: 20 newsgroups sample
+     #+name: sample2
+     [[./sample2.eps]]
+
+   Finally, all the data will be divided into 2 parts, one for training and one for testing. And for every part, there are a list of text and a list of labels. In *reader.py*, there are 2 Parsers for those formats and *ReutersReader* and *NewsgroupsReader* will use the corresponding parser to get the raw data and the /filter/ method will get the data we want to use and seperate them to Train and Test set.
+
+** Preprocessing
+*** Tokenization
+    After obtaining the text, we need to seperate them into the format that is suitable for the classification task. To achieve that, the first step is to transform the sample text into tokens. For example, "Hello world! Hello Python!" will become a list of "hello", "world", "hello" and "python". Please notice that we transform all the tokens in lower case.
+
+*** Stemming
+    Stemming is also a very important step because for every word, they may have many variations. For example, the past tense or the future tense of a word. 'do' and 'doing' should be a single feature. And the plural form "cats" should be the same as "cat". In the project, we use the Stemmer(http://www.nltk.org/api/nltk.stem.html) from NLTK
+
+*** Stop words
+    Stop words are those words that need to be filtered out before the processing. Generally, they will be those words that are too common in a language. For example, in English, these words could be "the", "a", "I"  and so on. In the project, we use the stop words list in NLTK. We notice that for the Reuters dataset, every document will end with the word "reuter", so "reuter" is also added into the list.
+
+*** Minimum document frequency
+    /Document frequency/ means the number of documents in the collection that contain a term. We denote the document freqquency of a term /t/ as df(t, D) where D is the whole documents. If one term only appeared in one document in the whole documents, then \( df(t, D) = 1 \).
+    In the whole documents, there may be some words so rare that they appear in just one or two ducuments. Those words might be useless for our job so we will remove them. In this project, the minimum is set to be 3, so those terms with df(t, D) < 3 will be removed.
+
+*** TF(term frequency)
+    After obtaining the tokens from text, we will count the frequency of each term(token), which is called /term frequency/. We denote the term frequency of term /t/ in document /d/ as tf(t, d). It simple counts the occurence of every term in the document. The idea behind TF is that term with higher frequency is more related to that document.
+
+*** TF-IDF(term frequency–inverse document frequency)
+    But raw term frequency has a critical problem: all terms are considered equally important when it comes to assessing relevancy on a query. In fact certain terms have little or no discriminating power in determining relevance. For instance, a collection of documents on the auto industry is likely to have the term auto in almost every document. So the inverse document frequency, denoted as idf(t, D) is a measure of whether the term is common or rare across all documents. A common term has less information for classification while a rare term has much more information.
+    \[ idf(t, D) = log\frac{N}{\left\vert{\left\{ d \in D: t \in d \right\}}\right\vert} \]
+    where N is the total number of documents and \( \left\vert{\left\{ d \in D: t \in d \right\}}\right\vert \) is the number of documents where the term /t/ appears.
+
+    Then,
+    \[ tdidf(t, d, D) = tf(t, d) * idf(t, D) \]
+** Train
+   After getting the tfidf model of the documents, we can apply them to our learning algorithms.
+   We compare SVM with naive Bayes, Rocchio algorithm, k-nearest and CART decision tree.
+
+** Performance measure
+   we use /precision/ and /recall/ which is typically used in document retrieval to evaluate performance. Precision and recall is calculated from TP, FP, TN and FN whose definition is in the confusion matrix(table [[confusion]]).
+
+   #+ATTR_LATEX: :mode table align=|c|c|c|
+   #+caption: confusion matrix
+   #+name: confusion
+   |             | True 1 | True 0 |
+   |-------------+--------+--------|
+   | /           | <      | >      |
+   | Predicted 1 | TP     | FP     |
+   | Predicted 0 | FN     | TN     |
+
+   + True positive(TP) = correctly identified
+   + False positive(FP) = incorrectly identified
+   + True negative(TN) = correctly rejected
+   + False negative(FN) = incorrectly rejected
+
+     Then, precision and recall of class /i/ are then defined as
+
+   \[ P_{i} = \frac{TP_{i}}{TP_{i}+FP_{i}} \]
+   \[ R_{i} = \frac{TP_{i}}{TP_{i}+FN_{i}} \]
+
+   based on precision and recall, we use /micro-averaging/ to calculate the whole precision and recall of all classes
+
+   \[ P_{micro} = \frac{\sum\nolimits_{i=1}^{\left\vert{C}\right\vert}{TP_{i}}}{\sum\nolimits_{i=1}^{\left\vert{C}\right\vert}{TP_{i}+FP{i}}} \]
+   \[ R_{micro} = \frac{\sum\nolimits_{i=1}^{\left\vert{C}\right\vert}{TP_{i}}}{\sum\nolimits_{i=1}^{\left\vert{C}\right\vert}{TP_{i}+FN{i}}} \]
+
+   We hope that precision and recall can be as high as possible at the same time. But in some cases, these two just conflict with each other. So in different condition we need to decide which one is much more important and make it higher.
+
+   But in our project, we use *F-Measure* to evaluate the performence considering both the precision and recall.
+
+   \[ F_{\beta} = \frac{(\beta^{2}+1)*(Precision*Recall)}{\beta^{2}*Precision+Recall} \]
+
+   when \( \beta = 1 \), then we get the *F1-score* which is used in our project.
+
+   \[ F1 = \frac{2*(Precision*Recall)}{Precision+Recall} \]
+
+* Result
+  Just like What Joachims did in his paper, all methods were run after selecting 500 best, 1000 best, 2000 best, 5000 best or all features. For K-NN, k \in {1, 15, 30, 45, 60} and we select the best one.
+  Table [[score1]] and table [[score2]] show the F1 score result for those 2 dataset.
+
+  #+caption: F1 score for Reuters21578 dataset
+  #+name: score1
+  |              | Bayes | Rocchio |  CART |  k-NN | SVM linear | SVM rbf |
+  |--------------+-------+---------+-------+-------+------------+---------|
+  | /            |    <> |      <> |    <> |    <> |         <> |      <> |
+  | features     |  2000 |     all |  1000 |   all |        all |    2000 |
+  |--------------+-------+---------+-------+-------+------------+---------|
+  | earn         | 96.00 |   92.14 | 95.14 | 92.37 |      98.43 |   97.89 |
+  | acq          | 77.39 |   86.67 | 85.22 | 87.69 |      95.89 |   92.94 |
+  | crude        | 82.76 |   87.10 | 83.61 | 85.17 |      93.60 |   90.63 |
+  | trade        | 71.13 |   79.04 | 74.85 | 81.11 |      91.93 |   83.91 |
+  | money-fx     | 65.36 |   73.33 | 63.03 | 79.57 |      85.39 |   85.08 |
+  | interest     | 67.74 |   80.00 | 71.70 | 80.54 |      82.28 |   87.74 |
+  | money-supply | 68.18 |   84.00 | 81.48 | 75.36 |      90.00 |   93.10 |
+  | ship         | 31.11 |   74.36 | 61.11 | 60.71 |      83.33 |   84.51 |
+  | sugar        | 69.77 |   89.36 | 83.02 | 82.14 |      98.00 |   93.88 |
+  | coffee       | 87.18 |   97.78 | 81.08 | 91.30 |      97.78 |   95.65 |
+  | gold         | 00.00 |   90.91 | 83.72 | 66.67 |      95.24 |   95.24 |
+  | gnp          | 00.00 |   77.78 | 42.42 | 87.50 |      87.50 |   93.33 |
+  | cpi          | 43.48 |   77.42 | 70.97 | 75.00 |      90.32 |   76.47 |
+  | cocoa        | 42.11 |   88.89 | 88.89 | 83.87 |        100 |   92.86 |
+  | grain        | 00.00 |   78.26 | 85.71 | 60.87 |      85.71 |   90.00 |
+  | jobs         | 28.57 |   95.65 | 95.65 | 95.65 |      95.65 |   95.65 |
+  | reserves     |     0 |   91.67 | 80.00 | 66.67 |      90.91 |   90.91 |
+  | ipi          |     0 |   90.91 | 53.85 | 95.24 |      91.67 |   95.24 |
+  | alum         |     0 |   80.00 | 40.00 | 73.33 |      78.79 |   78.79 |
+  | copper       |     0 |   92.86 | 58.33 | 69.23 |      96.00 |   96.00 |
+  |--------------+-------+---------+-------+-------+------------+---------|
+  | microavg     | 79.83 |   86.92 | 83.57 | 86.25 |      94.43 |   92.33 |
+
+
+  In the reuters21578 dataset, k-NN(k = 30) and Rocchio methods perform not bad in the conventional methods. But we can find that SVM(linear) gets a much higher accuracy than all the conventional methods. And at the same time, linear SVM works better than SVM with rbf kernel which shows that text classification problem can be sepearable linearly.
+
+  #+caption: F1 score for 20 newsgroup dataset
+  #+name: score2
+  |                          | Bayes | Rocchio |  CART |  k-nn | SVM linear | SVM rbf |
+  |--------------------------+-------+---------+-------+-------+------------+---------|
+  | /                        |    <> |      <> |    <> |    <> |         <> |      <> |
+  | features                 |   all |     all |  1000 |   all |        all |     all |
+  |--------------------------+-------+---------+-------+-------+------------+---------|
+  | alt.atheism              | 73.44 |   75.37 | 52.28 | 75.83 |      78.26 |   76.73 |
+  | comp.graphics            | 78.29 |   70.91 | 50.87 | 70.76 |      85.83 |   79.63 |
+  | comp.os.ms-windows.misc  | 83.91 |   79.62 | 57.14 | 74.95 |      86.11 |   82.43 |
+  | comp.sys.ibm.pc.hardware | 79.48 |   73.18 | 51.95 | 70.72 |      79.84 |   78.88 |
+  | comp.sys.mac.hardware    | 85.54 |   80.00 | 58.08 | 77.66 |      87.80 |   84.70 |
+  | comp.windows.x           | 88.53 |   84.01 | 62.66 | 81.84 |      92.02 |   88.16 |
+  | misc.forsale             | 81.05 |   77.24 | 58.12 | 71.23 |      82.31 |   83.30 |
+  | rec.autos                | 88.03 |   86.42 | 65.70 | 83.54 |      90.40 |   91.75 |
+  | rec.motorcycles          | 95.33 |   93.17 | 79.01 | 89.92 |      95.39 |   96.10 |
+  | rec.sport.baseball       | 94.97 |   92.02 | 75.55 | 90.54 |      96.80 |   96.77 |
+  | rec.sport.hockey         | 95.63 |   93.47 | 80.95 | 92.13 |      97.39 |   96.11 |
+  | sci.crypt                | 92.97 |   88.60 | 70.94 | 93.31 |      95.98 |   93.72 |
+  | sci.electronics          | 86.44 |   66.04 | 43.41 | 70.24 |      85.83 |   83.36 |
+  | sci.med                  | 90.64 |   86.11 | 59.90 | 85.59 |      92.15 |   91.85 |
+  | sci.space                | 92.91 |   87.95 | 71.14 | 87.70 |      95.07 |   94.50 |
+  | talk.plotics.guns        | 83.12 |   76.60 | 60.08 | 82.47 |      85.03 |   84.32 |
+  | talk.politics.mideast    | 93.28 |   89.12 | 80.72 | 89.02 |      94.02 |   94.74 |
+  | talk.politics.misc       | 75.92 |   67.86 | 42.53 | 77.73 |      74.90 |   69.80 |
+  | talk.religion.misc       | 52.80 |   55.74 | 35.63 | 57.98 |      62.38 |   57.75 |
+  | soc.religion.christian   | 87.14 |   96.65 | 99.80 | 89.54 |      99.40 |   98.60 |
+  |--------------------------+-------+---------+-------+-------+------------+---------|
+  | microavg                 | 85.20 |   80.74 | 62.74 | 80.72 |      87.84 |   86.06 |
+
+
+  In the 20 newsgroup dataset, Naive bayes method performs best in the conventional methods. But linear SVM still performs better than all conventional methods and SVM with rbf kernel. This, again, shows that text classification problem can be linearly separable.
+
+* Conclusion
+  The result of comparasion shows that SVM achieves a good performance on text categorization tasks. In our datasets, SVM performs better than other conventional methods. As most text classification problems can be separable linear, we don't need to use SVM with kernel, which can be rather slow. Linear SVM already has a good performence and is very fast. What's more, it  does not need to do any feature selection or parameter tuning. All of these advantages show that SVM can be a pratical method to do text classification.
+
+* References
+  1. T. Joachims, /Text Categorization with Support Vector Machines: Learning with Many Relevant Features/. Proceedings of the European Conference on Machine Learning (ECML), Springer, 1998.
+  2. Christopher D. Manning, Prabhakar Raghavan and Hinrich Schütze, /Introduction to Information Retrieval/, Cambridge University Press. 2008
