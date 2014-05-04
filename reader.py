@@ -5,6 +5,7 @@ import re
 from itertools import groupby
 from sklearn.cross_validation import train_test_split
 
+
 class ReutersParser(HTMLParser):
     """
     parse reuters 21578 dataset
@@ -273,6 +274,7 @@ class NewsgroupsReader():
             print("{0} split to train: {1}, test: {2}".format(g,
                                                               len(traindocs),
                                                               len(testdocs)))
+            #we only use the body part
             for doc in traindocs:
                 # texts = [v for k, v in doc.iteritems() if k != 'newsgroup']
                 # text = " ".join(texts)
