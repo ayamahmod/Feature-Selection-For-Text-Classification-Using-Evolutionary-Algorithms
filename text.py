@@ -160,19 +160,19 @@ if __name__ == '__main__':
         train_X_sub, test_X_sub = select_features(train_X, train_y,
                                                   test_X, k)
 
-        print('linear SVM')
-        clf = svm.LinearSVC()
-        result = benchmark(clf, train_X_sub, train_y,
-                           test_X_sub, test_y, encoder)
-        print(result[1])
-        updatescore('svm linear', clf, k, result)
+        # print('linear SVM')
+        # clf = svm.LinearSVC()
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
+        # print(result[1])
+        # updatescore('svm linear', clf, k, result)
 
-        print('svm rbf')
-        clf = svm.SVC(kernel='rbf', gamma=1)
-        result = benchmark(clf, train_X_sub, train_y,
-                           test_X_sub, test_y, encoder)
-        print(result[1])
-        updatescore('svm rbf', clf, k, result)
+        # print('svm rbf')
+        # clf = svm.SVC(kernel='rbf', gamma=1)
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
+        # print(result[1])
+        # updatescore('svm rbf', clf, k, result)
 
         print('K-NN')
         for i in ks:
@@ -182,28 +182,28 @@ if __name__ == '__main__':
             print(result[1])
             updatescore('knn', clf, k, result)
 
-        print('Rocchio')
-        clf = NearestCentroid()
-        result = benchmark(clf, train_X_sub, train_y,
-                           test_X_sub, test_y, encoder)
-        print(result[1])
-        updatescore('Rocchio', clf, k, result)
+        # print('Rocchio')
+        # clf = NearestCentroid()
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
+        # print(result[1])
+        # updatescore('Rocchio', clf, k, result)
 
-        print('Bayes')
-        clf = MultinomialNB()
-        result = benchmark(clf, train_X_sub, train_y,
-                           test_X_sub, test_y, encoder)
-        print(result[1])
-        updatescore('bayes', clf, k, result)
+        # print('Bayes')
+        # clf = MultinomialNB()
+        # result = benchmark(clf, train_X_sub, train_y,
+        #                    test_X_sub, test_y, encoder)
+        # print(result[1])
+        # updatescore('bayes', clf, k, result)
 
-        print('CART')
-        if k != 'all':
-            #when k='all', it takes too much time. so remove it
-            clf = DecisionTreeClassifier()
-            result = benchmark(clf, train_X_sub.toarray(), train_y,
-                               test_X_sub.toarray(), test_y, encoder)
-            print(result[1])
-            updatescore('CART', clf, k, result)
+        # print('CART')
+        # if k != 'all':
+        #     #when k='all', it takes too much time. so remove it
+        #     clf = DecisionTreeClassifier()
+        #     result = benchmark(clf, train_X_sub.toarray(), train_y,
+        #                        test_X_sub.toarray(), test_y, encoder)
+        #     print(result[1])
+        #     updatescore('CART', clf, k, result)
 
     #print all best benchmars for every method
     for key in clfs:
