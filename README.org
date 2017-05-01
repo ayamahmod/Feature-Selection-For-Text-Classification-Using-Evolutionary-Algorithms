@@ -1,9 +1,12 @@
-#+TITLE: Project MDI343: Text Categorization
+#+TITLE: Feature Selection For Text Classification Using Evolutionary Algorithms
 
 * Introduction
-  In this project, we will use SVM to do text categorization and compare its performance with other conventional learning methods commonly used
-  for text categorization. The project is based on Thorsten Joachims's paper(Text Categorization with Support Vector Machines: Learning with Many Relevant Features):
-  http://www.cs.cornell.edu/people/tj/publications/joachims_98a.pdf
+  In this project, we will use evolutionary algorithms to do feature selection for text classification and compare their results. 
+	The evolutionary algorithms we'll use are:
+	1. Genetic Algorithm 
+	2. Ant Colony Algorithm
+	The project is based on (Feature Selection For Text Classification Using Genetic Algorithms) paper:
+  http://ieeexplore.ieee.org/document/7804223/
 
 * Why SVM
   According to Joachims, there are several important reasons that SVM works well for text categorization
